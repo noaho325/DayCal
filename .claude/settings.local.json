@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/noah/.nvm/versions/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(export PATH=\"/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:$PATH\")",
+      "Bash(mkdir -p /tmp/daysync-build)",
+      "Read(//tmp/**)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --yes)",
+      "Bash(npx tsc:*)",
+      "Bash(jq .message.content[0].text)"
+    ]
+  }
+}

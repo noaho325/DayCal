@@ -42,7 +42,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
     >
@@ -57,7 +57,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         className={[
           'relative w-full bg-white dark:bg-[#1C1C1E] shadow-xl z-10',
-          'rounded-t-2xl sm:rounded-2xl',
+          'rounded-2xl',
           maxWidthClass,
           'max-h-[90vh] flex flex-col',
         ].join(' ')}

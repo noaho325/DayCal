@@ -229,7 +229,10 @@ export const Timeline: React.FC<TimelineProps> = ({
                   style={{ top: `${top}px`, height: `${height}px`, minHeight: '40px' }}
                   onComplete={onCompleteBlock}
                   onSkip={(block) => onSkipBlock(block.id, 'other')}
-                  onDelay={() => setRescheduleOpen(true)}
+                  onDelay={(b, minutes, mode) => {
+                    if (mode === 'all-future') onPushAllBack(b.startTime, minutes)
+                    else onDelayBlock(b.id, minutes)
+                  }}
                   onEdit={handleEdit}
                   onDelete={onDeleteBlock}
                   onMove={(id, newStart, newEnd) => onUpdateBlock(id, { startTime: newStart, endTime: newEnd })}

@@ -135,6 +135,11 @@ export interface FeedItem {
   mealPhotoURL?: string
   mealName?: string
   liked?: boolean
+  // Firestore-specific fields
+  eventId?: string
+  ownerId?: string
+  likedBy?: string[]
+  likes?: number
 }
 
 export interface LeaderboardEntry {

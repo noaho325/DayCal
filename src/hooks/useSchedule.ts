@@ -120,9 +120,11 @@ export function useSchedule(date: string, userId?: string): UseScheduleReturn {
         // Persist
         if (isFirebaseConfigured && db && userId) {
           import('firebase/firestore').then(({ doc, setDoc }) => {
+            // Firestore rejects undefined values — strip them out
+            const clean = JSON.parse(JSON.stringify(next))
             setDoc(
               doc(db!, 'users', userId, 'schedules', date),
-              { blocks: next, hydration, date },
+              { blocks: clean, hydration, date },
               { merge: true }
             ).catch((err) => {
               console.warn('Firestore save failed', err)

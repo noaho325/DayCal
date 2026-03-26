@@ -31,7 +31,7 @@ function saveStreak(data: StreakData) {
   } catch { /* ignore */ }
 }
 
-export function useStreak(todayDate: string, todayBlocks: TimeBlock[]) {
+export function useStreak(todayDate: string, todayBlocks: TimeBlock[], onSave?: (s: StreakData) => void) {
   const [streak, setStreak] = useState<StreakData>(() => loadStreak())
 
   useEffect(() => {
@@ -69,7 +69,8 @@ export function useStreak(todayDate: string, todayBlocks: TimeBlock[]) {
 
     saveStreak(updated)
     setStreak(updated)
-  }, [todayBlocks, todayDate])
+    onSave?.(updated)
+  }, [todayBlocks, todayDate, onSave])
 
   return streak
 }

@@ -17,6 +17,7 @@ import {
   MapPin,
   X,
   GripVertical,
+  ChevronDown,
 } from 'lucide-react'
 import type { TimeBlock as TimeBlockType } from '@/types'
 import { PRIORITY_META, getCategoryMeta, loadUserCategories } from '@/utils/constants'
@@ -36,7 +37,7 @@ interface TimeBlockProps {
   style?: React.CSSProperties
   onComplete: (id: string) => void
   onSkip: (block: TimeBlockType) => void
-  onDelay: (block: TimeBlockType) => void
+  onDelay: (block: TimeBlockType, minutes: number, mode: 'single' | 'all-future') => void
   onEdit: (block: TimeBlockType) => void
   onDelete: (id: string) => void
   onMove?: (id: string, newStartTime: string, newEndTime: string) => void
@@ -53,6 +54,8 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
   onMove,
 }) => {
   const [expanded, setExpanded] = useState(false)
+  const [delayOpen, setDelayOpen] = useState(false)
+  const [delayMins, setDelayMins] = useState(15)
   const customCats = loadUserCategories()
   const meta = getCategoryMeta(block.category, customCats)
   const Icon = meta.iconName ? (ICON_MAP[meta.iconName] ?? null) : null
@@ -72,9 +75,7 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
       : '#94A3B8'
 
   const leftBorderColor =
-    block.status === 'completed'
-      ? '#22C55E'
-      : block.status === 'skipped'
+    block.status === 'skipped'
       ? '#EF4444'
       : block.status === 'excused'
       ? '#9CA3AF'
@@ -83,19 +84,15 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
       : priorityColor
 
   const catColor = meta.color
-  const bgColor = isFinished
-    ? block.status === 'completed'
-      ? 'rgba(34,197,94,0.08)'
-      : block.status === 'skipped'
-      ? 'rgba(239,68,68,0.18)'
-      : 'rgba(156,163,175,0.08)'
-    : catColor + '28'
+  const bgColor = block.status === 'skipped'
+    ? 'rgba(239,68,68,0.12)'
+    : catColor + '55'
 
   const blockStyle: React.CSSProperties = {
     ...style,
     borderLeftColor: leftBorderColor,
     backgroundColor: bgColor,
-    borderColor: !isFinished ? catColor + '55' : undefined,
+    borderColor: !isFinished ? catColor + '70' : undefined,
   }
 
   // ── Drag logic ──────────────────────────────────────────────────────────────
@@ -239,9 +236,6 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
                   Now
                 </span>
               )}
-              {block.status === 'completed' && (
-                <CheckCircle size={13} className="text-green-500 shrink-0" />
-              )}
               {block.status === 'skipped' && (
                 <XCircle size={13} className="text-red-400 shrink-0" />
               )}
@@ -269,17 +263,13 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
       {/* Detail sheet — fixed overlay, no overlap */}
       {expanded && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-[2px]"
-          onClick={() => setExpanded(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-[2px]"
+          onClick={() => { setExpanded(false); setDelayOpen(false) }}
         >
           <div
-            className="bg-white dark:bg-[#1C1C1E] w-full max-w-lg rounded-t-3xl shadow-2xl overflow-hidden"
+            className="bg-white dark:bg-[#1C1C1E] w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 bg-gray-200 dark:bg-[#48484A] rounded-full" />
-            </div>
 
             {/* Header */}
             <div className="flex items-start gap-3 px-5 py-3">
@@ -308,7 +298,7 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
                 </p>
               </div>
               <button
-                onClick={() => setExpanded(false)}
+                onClick={() => { setExpanded(false); setDelayOpen(false) }}
                 className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#3A3A3C] text-gray-400 dark:text-gray-500 shrink-0 transition-colors"
               >
                 <X size={16} />
@@ -328,12 +318,6 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
                   <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-100 rounded-full px-2 py-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                     In Progress
-                  </span>
-                )}
-                {block.status === 'completed' && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-600 bg-green-100 rounded-full px-2 py-0.5">
-                    <CheckCircle size={10} />
-                    Completed
                   </span>
                 )}
                 {block.status === 'skipped' && (
@@ -368,52 +352,81 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
             </div>
 
             {/* Actions */}
-            <div className="px-5 pb-8 flex flex-wrap gap-2">
-              <button
-                onClick={() => { onComplete(block.id); setExpanded(false) }}
-                className={[
-                  'flex items-center gap-1.5 text-sm font-medium rounded-xl px-4 py-2.5 transition-colors',
-                  block.status === 'completed'
-                    ? 'text-green-700 bg-green-100 ring-1 ring-green-300'
-                    : 'text-green-600 dark:text-green-400 hover:text-green-700 bg-green-50 dark:bg-green-900/30 hover:bg-green-100',
-                ].join(' ')}
-              >
-                <CheckCircle size={15} />
-                Complete
-              </button>
-              <button
-                onClick={() => { onSkip(block); setExpanded(false) }}
-                className={[
-                  'flex items-center gap-1.5 text-sm font-medium rounded-xl px-4 py-2.5 transition-colors',
-                  block.status === 'skipped'
-                    ? 'text-red-700 bg-red-100 ring-1 ring-red-300'
-                    : 'text-red-500 dark:text-red-400 hover:text-red-600 bg-red-50 dark:bg-red-900/30 hover:bg-red-100',
-                ].join(' ')}
-              >
-                <XCircle size={15} />
-                Skip
-              </button>
-              <button
-                onClick={() => { onDelay(block); setExpanded(false) }}
-                className="flex items-center gap-1.5 text-sm font-medium text-blue-500 dark:text-blue-400 hover:text-blue-600 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-xl px-4 py-2.5 transition-colors"
-              >
-                <Clock size={15} />
-                Delay
-              </button>
-              <button
-                onClick={() => { onEdit(block); setExpanded(false) }}
-                className="flex items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100 bg-gray-50 dark:bg-[#2C2C2E] hover:bg-gray-100 dark:hover:bg-[#3A3A3C] rounded-xl px-4 py-2.5 transition-colors"
-              >
-                <Edit3 size={15} />
-                Edit
-              </button>
-              <button
-                onClick={() => { onDelete(block.id); setExpanded(false) }}
-                className="flex items-center gap-1.5 text-sm font-medium text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 bg-gray-50 dark:bg-[#2C2C2E] hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl px-4 py-2.5 transition-colors"
-              >
-                <Trash2 size={15} />
-                Delete
-              </button>
+            <div className="px-5 pb-6 space-y-3">
+              {/* Delay picker */}
+              {delayOpen ? (
+                <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-3">
+                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                    <Clock size={12} />
+                    Delay by
+                  </p>
+                  {/* Slider + input */}
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={5} max={180} step={5}
+                      value={delayMins}
+                      onChange={(e) => setDelayMins(Number(e.target.value))}
+                      className="flex-1 h-2 rounded-full appearance-none cursor-pointer accent-blue-500 bg-blue-200 dark:bg-blue-800"
+                    />
+                    <div className="flex items-center gap-1 shrink-0">
+                      <input
+                        type="number"
+                        min={1} max={360}
+                        value={delayMins}
+                        onChange={(e) => setDelayMins(Math.max(1, Math.min(360, Number(e.target.value) || 1)))}
+                        className="w-14 text-center text-sm font-semibold text-blue-600 dark:text-blue-400 bg-white dark:bg-[#2C2C2E] border border-blue-200 dark:border-blue-700 rounded-lg px-1 py-1 outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <span className="text-xs text-blue-500 dark:text-blue-400">min</span>
+                    </div>
+                  </div>
+                  {/* Scope buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { onDelay(block, delayMins, 'single'); setDelayOpen(false); setExpanded(false) }}
+                      className="flex-1 py-2 text-xs font-semibold rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                    >
+                      This event only
+                    </button>
+                    <button
+                      onClick={() => { onDelay(block, delayMins, 'all-future'); setDelayOpen(false); setExpanded(false) }}
+                      className="flex-1 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-[#2C2C2E] border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                    >
+                      All events after
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setDelayOpen(false)}
+                    className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={() => setDelayOpen(true)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-blue-500 dark:text-blue-400 hover:text-blue-600 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-xl px-4 py-2.5 transition-colors"
+                  >
+                    <Clock size={15} />
+                    Delay
+                  </button>
+                  <button
+                    onClick={() => { onEdit(block); setExpanded(false) }}
+                    className="flex items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100 bg-gray-50 dark:bg-[#2C2C2E] hover:bg-gray-100 dark:hover:bg-[#3A3A3C] rounded-xl px-4 py-2.5 transition-colors"
+                  >
+                    <Edit3 size={15} />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => { onDelete(block.id); setExpanded(false) }}
+                    className="flex items-center gap-1.5 text-sm font-medium text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 bg-gray-50 dark:bg-[#2C2C2E] hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl px-4 py-2.5 transition-colors"
+                  >
+                    <Trash2 size={15} />
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

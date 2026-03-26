@@ -35,8 +35,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full`} suppressHydrationWarning>
+      <head>
+        {/* Runs before hydration to prevent dark mode flash */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('daycal_theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-[#FAFAFA] dark:bg-[#0F0F10] text-[#1A1A1A] dark:text-gray-50">
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('daycal_theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js')})()` }} />
         {children}
         <ToastProvider />
       </body>

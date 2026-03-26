@@ -41,7 +41,10 @@ import { format, parse, addDays, subDays, startOfWeek } from 'date-fns'
 import { useSchedule } from '@/hooks/useSchedule'
 import { useGoals } from '@/hooks/useGoals'
 import { useStreak } from '@/hooks/useStreak'
+import { useAuth } from '@/hooks/useAuth'
+import { useCloudSync } from '@/hooks/useCloudSync'
 import { Timeline } from '@/components/schedule/Timeline'
+import { RemindersPanel } from '@/components/reminders/RemindersPanel'
 import { GoalProgressPanel } from '@/components/goals/GoalProgressPanel'
 import { MorningBriefing } from '@/components/goals/MorningBriefing'
 import { EndOfDayReview } from '@/components/goals/EndOfDayReview'
@@ -49,8 +52,12 @@ import { WeeklySummaryReport } from '@/components/goals/WeeklySummaryReport'
 import { MealsView } from '@/components/meals/MealsView'
 import { SocialView } from '@/components/social/SocialView'
 import { AnalyticsView } from '@/components/analytics/AnalyticsView'
+import { ListsView } from '@/components/lists/ListsView'
 import { getTodayString } from '@/utils/formatters'
 import { calculateDailyScore, getScoreColor } from '@/lib/scoring'
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { db, storage, isFirebaseConfigured } from '@/lib/firebase'
 import type { OnboardingGoals, UserCategory, TimeBlock, BlockPriority } from '@/types'
 import {
   loadUserCategories,
@@ -68,7 +75,7 @@ const PREF_ICON_MAP: Record<string, React.ElementType> = {
 }
 
 type ViewMode = 'day' | 'week' | 'month'
-type NavTab = 'today' | 'points' | 'meals' | 'social' | 'analytics' | 'preferences' | 'profile'
+type NavTab = 'today' | 'points' | 'meals' | 'social' | 'analytics' | 'lists' | 'preferences' | 'profile'
 
 function formatDisplayDate(dateStr: string): { weekday: string; date: string } {
   const d = parse(dateStr, 'yyyy-MM-dd', new Date())
@@ -112,6 +119,7 @@ function AppSidebar({
         { id: 'points' as NavTab, icon: Star, label: 'Points' },
         { id: 'analytics' as NavTab, icon: BarChart2, label: 'Analytics' },
         { id: 'social' as NavTab, icon: Users, label: 'Social' },
+        { id: 'lists' as NavTab, icon: ClipboardList, label: 'Lists' },
         ...(mealsEnabled ? [{ id: 'meals' as NavTab, icon: Utensils, label: 'Meals' }] : []),
       ],
     },
@@ -149,7 +157,7 @@ function AppSidebar({
             ].join(' ')}>
               {section.label}
             </p>
-            {section.items.map(({ id, icon: Icon, label }) => {
+            {section.items.map(({ id, label }) => {
               const active = activeTab === id
               return (
                 <button
@@ -157,19 +165,13 @@ function AppSidebar({
                   onClick={() => onNavigate(id)}
                   title={label}
                   className={[
-                    'w-full flex items-center gap-3 rounded-xl py-2.5 transition-colors',
-                    mobile
-                      ? 'px-3 justify-start'
-                      : 'px-3 justify-start md:max-lg:justify-center md:max-lg:px-0 md:max-lg:py-3',
+                    'w-full flex items-center rounded-xl py-2.5 px-3 transition-colors',
                     active
                       ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
                       : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#2C2C2E] hover:text-gray-700 dark:hover:text-gray-200',
                   ].join(' ')}
                 >
-                  <Icon size={18} strokeWidth={active ? 2.5 : 1.8} className="shrink-0" />
-                  <span className={['text-sm font-medium', showLabel(mobile)].join(' ')}>
-                    {label}
-                  </span>
+                  <span className="text-sm font-medium">{label}</span>
                 </button>
               )
             })}
@@ -182,11 +184,14 @@ function AppSidebar({
 
 export default function HomePage() {
   const router = useRouter()
+  const { user, loading: authLoading, signOut } = useAuth()
+  const { saveStreak, saveWeeklyPoints } = useCloudSync(user?.uid)
   const [currentDate, setCurrentDate] = useState(getTodayString)
   const [activeTab, setActiveTab] = useState<NavTab>('today')
   const prefCatRef = useRef<HTMLDivElement>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('day')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [remindersOpen, setRemindersOpen] = useState(true)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(false)
@@ -194,17 +199,23 @@ export default function HomePage() {
   const [hydration, setHydration] = useState(0)
 
   useEffect(() => {
-    setMounted(true)
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (authLoading) return
     setDarkMode(document.documentElement.classList.contains('dark'))
     setHydration(parseInt(localStorage.getItem(`daycal_hydration_${new Date().toISOString().slice(0,10)}`) ?? '0', 10))
-    const loggedIn = localStorage.getItem('daycal_logged_in')
+    const loggedIn = localStorage.getItem('daycal_logged_in') || user
     const onboarded = localStorage.getItem('daycal_onboarded')
     if (!loggedIn) {
       router.replace('/login')
     } else if (!onboarded) {
       router.replace('/onboarding')
+    } else {
+      setMounted(true)
     }
-  }, [router])
+  }, [router, user, authLoading])
 
   const toggleDarkMode = () => {
     const isDark = !darkMode
@@ -230,7 +241,7 @@ export default function HomePage() {
     completeBlock,
     undo,
     canUndo,
-  } = useSchedule(currentDate)
+  } = useSchedule(currentDate, user?.uid)
 
   const today = getTodayString()
 
@@ -243,7 +254,34 @@ export default function HomePage() {
     } catch { return [] }
   }, [currentDate, blocks, today])
   const { goals, weekProgress } = useGoals(todayBlocksForGoals, today)
-  const streak = useStreak(today, todayBlocksForGoals)
+  const streak = useStreak(today, todayBlocksForGoals, saveStreak)
+
+  // Sync weeklyPoints to Firestore so friends can see it on the leaderboard
+  const prevWeeklyPointsRef = useRef(0)
+  useEffect(() => {
+    if (weekProgress.weeklyPoints !== prevWeeklyPointsRef.current && user?.uid) {
+      prevWeeklyPointsRef.current = weekProgress.weeklyPoints
+      saveWeeklyPoints(weekProgress.weeklyPoints)
+    }
+  }, [weekProgress.weeklyPoints, user?.uid, saveWeeklyPoints])
+
+  // Write streak feed events when streak increases
+  const prevStreakRef = useRef(0)
+  useEffect(() => {
+    if (!user?.uid || streak.current === 0) return
+    if (streak.current > prevStreakRef.current) {
+      import('firebase/firestore').then(async ({ collection, addDoc, serverTimestamp }) => {
+        const { isFirebaseConfigured, db } = await import('@/lib/firebase')
+        if (!isFirebaseConfigured || !db) return
+        addDoc(collection(db, 'users', user!.uid, 'feedEvents'), {
+          type: 'streak',
+          content: streak.current === 1 ? 'started a new streak! 🔥' : `is on a ${streak.current}-day streak 🔥`,
+          timestamp: serverTimestamp(), likedBy: [], likes: 0,
+        }).catch(() => {})
+      })
+    }
+    prevStreakRef.current = streak.current
+  }, [streak.current, user?.uid])
 
   // Morning briefing — show once per morning (5am–1pm)
   const [showMorning, setShowMorning] = useState(false)
@@ -354,7 +392,7 @@ export default function HomePage() {
   }
 
   const tabTitles: Record<NavTab, string> = {
-    today: 'Calendar', points: 'Points', meals: 'Meals', social: 'Social', analytics: 'Analytics', preferences: 'Preferences', profile: 'Profile',
+    today: 'Calendar', points: 'Points', meals: 'Meals', social: 'Social', analytics: 'Analytics', lists: 'Lists', preferences: 'Preferences', profile: 'Profile',
   }
 
   return (
@@ -531,7 +569,7 @@ export default function HomePage() {
                   </button>
                   <div className="h-px bg-gray-100 dark:bg-[#38383A] my-1" />
                   <button
-                    onClick={() => { localStorage.removeItem('daycal_logged_in'); router.replace('/login') }}
+                    onClick={async () => { await signOut(); localStorage.removeItem('daycal_logged_in'); router.replace('/login') }}
                     className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors"
                   >
                     <ChevronLeft size={14} />
@@ -574,72 +612,40 @@ export default function HomePage() {
             </div>
           ) : activeTab === 'today' ? (
             viewMode === 'day' ? (
-              <div className="h-full flex flex-col overflow-hidden">
-                <GoalProgressPanel
-                  weekProgress={weekProgress}
-                  goals={goals}
-                  streak={streak}
-                  currentDate={currentDate}
-                />
-                {/* Hydration tracker */}
-                {currentDate === today && (
-                  <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-gray-100 dark:border-[#38383A] bg-white dark:bg-[#1C1C1E]">
-                    <Droplets size={14} className="text-blue-400 shrink-0" />
-                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Hydration</span>
-                    <div className="flex items-center gap-1 ml-1">
-                      {Array.from({ length: 8 }, (_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => {
-                            const next = i < hydration ? i : i + 1
-                            setHydration(next)
-                            localStorage.setItem(`daycal_hydration_${today}`, String(next))
-                          }}
-                          className={`w-4 h-4 rounded-full transition-colors ${i < hydration ? 'bg-blue-400' : 'bg-gray-200 dark:bg-[#3A3A3C] hover:bg-blue-200'}`}
-                        />
-                      ))}
-                    </div>
-                    <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">{hydration}/8</span>
-                    {hydration > 0 && (
+              <div className="h-full flex overflow-hidden">
+                <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+                  <div className="flex-1 overflow-hidden">
+                    <Timeline
+                      blocks={blocks}
+                      onAddBlock={addBlock}
+                      onUpdateBlock={updateBlock}
+                      onDeleteBlock={deleteBlock}
+                      onDelayBlock={delayBlock}
+                      onPushAllBack={pushAllBack}
+                      onSkipBlock={skipBlock}
+                      onExcuseBlock={excuseBlock}
+                      onCompleteBlock={completeBlock}
+                      onUndo={undo}
+                      canUndo={canUndo}
+                      onAddNewCategory={() => {
+                        setActiveTab('preferences')
+                        setTimeout(() => prefCatRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+                      }}
+                    />
+                  </div>
+                  {currentDate === today && new Date().getHours() >= 18 && (
+                    <div className="shrink-0 px-4 pb-2 pt-1">
                       <button
-                        onClick={() => { setHydration(0); localStorage.setItem(`daycal_hydration_${today}`, '0') }}
-                        className="ml-auto text-[10px] text-gray-300 dark:text-gray-600 hover:text-gray-400 transition-colors"
+                        onClick={() => setShowEod(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-[#2C2C2E] hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors"
                       >
-                        reset
+                        <ClipboardList size={14} />
+                        End-of-Day Review
                       </button>
-                    )}
-                  </div>
-                )}
-                <div className="flex-1 overflow-hidden">
-                  <Timeline
-                    blocks={blocks}
-                    onAddBlock={addBlock}
-                    onUpdateBlock={updateBlock}
-                    onDeleteBlock={deleteBlock}
-                    onDelayBlock={delayBlock}
-                    onPushAllBack={pushAllBack}
-                    onSkipBlock={skipBlock}
-                    onExcuseBlock={excuseBlock}
-                    onCompleteBlock={completeBlock}
-                    onUndo={undo}
-                    canUndo={canUndo}
-                    onAddNewCategory={() => {
-                      setActiveTab('preferences')
-                      setTimeout(() => prefCatRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-                    }}
-                  />
+                    </div>
+                  )}
                 </div>
-                {currentDate === today && new Date().getHours() >= 18 && (
-                  <div className="shrink-0 px-4 pb-2 pt-1">
-                    <button
-                      onClick={() => setShowEod(true)}
-                      className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-[#2C2C2E] hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors"
-                    >
-                      <ClipboardList size={14} />
-                      End-of-Day Review
-                    </button>
-                  </div>
-                )}
+                <RemindersPanel open={remindersOpen} onToggle={() => setRemindersOpen((v) => !v)} />
               </div>
             ) : viewMode === 'week' ? (
               <WeekCalendarView
@@ -660,9 +666,20 @@ export default function HomePage() {
           ) : activeTab === 'meals' ? (
             <MealsView onLogMeal={logMealToDate} />
           ) : activeTab === 'social' ? (
-            <SocialView />
+            <SocialView
+              userId={user?.uid}
+              currentUser={{
+                displayName: (typeof window !== 'undefined' ? localStorage.getItem('daycal_profile_name') : null) ?? user?.displayName ?? '',
+                username: (typeof window !== 'undefined' ? localStorage.getItem('daycal_profile_username') : null) ?? '',
+                photoURL: (typeof window !== 'undefined' ? localStorage.getItem('daycal_profile_photo') : null) ?? user?.photoURL ?? undefined,
+                weeklyPoints: weekProgress.weeklyPoints,
+                streak: streak.current,
+              }}
+            />
           ) : activeTab === 'analytics' ? (
             <AnalyticsView />
+          ) : activeTab === 'lists' ? (
+            <ListsView />
           ) : activeTab === 'preferences' ? (
             <PreferencesView catSectionRef={prefCatRef} mealsEnabled={mealsEnabled} onMealsToggle={(v) => { setMealsEnabled(v); localStorage.setItem('daycal_meals_enabled', String(v)) }} />
           ) : (
@@ -803,12 +820,8 @@ function WeekCalendarView({ currentDate, weekProgress, goals, streak, onSelectDa
                     <p className="text-center text-gray-200 dark:text-gray-700 text-xl pt-3">·</p>
                   ) : dayBlocks.map((block) => {
                     const meta = getCategoryMeta(block.category, userCats)
-                    const bgColor = block.status === 'completed' ? '#F0FDF4'
-                      : block.status === 'skipped' ? '#FEF2F2'
-                      : meta.color + '22'
-                    const borderColor = block.status === 'completed' ? '#22C55E'
-                      : block.status === 'skipped' ? '#EF4444'
-                      : meta.color
+                    const bgColor = block.status === 'skipped' ? 'rgba(239,68,68,0.12)' : meta.color + '33'
+                    const borderColor = block.status === 'skipped' ? '#EF4444' : meta.color
                     return (
                       <div key={block.id} className="rounded overflow-hidden" style={{ backgroundColor: bgColor, borderLeft: `2.5px solid ${borderColor}` }}>
                         <div className="px-1 py-0.5">
@@ -932,25 +945,21 @@ function MonthCalendarView({ currentDate, onSelectDate }: MonthViewProps) {
   const startOffset = new Date(year, month, 1).getDay() // 0 = Sunday
   const numWeeks = Math.ceil((startOffset + daysInMonth) / 7)
 
-  // Build per-day event data: { color, label }[] per dateStr
-  const [dayEvents, setDayEvents] = useState<Record<string, { color: string; label: string }[]>>({})
+  // Build per-day event data: { color, title }[] per dateStr
+  const [dayEvents, setDayEvents] = useState<Record<string, { color: string; title: string }[]>>({})
 
   useEffect(() => {
     const userCats = loadUserCategories()
-    const result: Record<string, { color: string; label: string }[]> = {}
+    const result: Record<string, { color: string; title: string }[]> = {}
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = format(new Date(year, month, day), 'yyyy-MM-dd')
-      const blocks = loadBlocksForDate(dateStr).filter((b) => !b.isFlexible)
-      const seen = new Set<string>()
-      const events: { color: string; label: string }[] = []
-      for (const block of blocks) {
-        if (!seen.has(block.category) && events.length < 4) {
-          seen.add(block.category)
-          const meta = getCategoryMeta(block.category, userCats)
-          events.push({ color: meta.color, label: meta.label })
-        }
-      }
-      result[dateStr] = events
+      const blocks = loadBlocksForDate(dateStr)
+        .filter((b) => !b.isFlexible)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      result[dateStr] = blocks.map((b) => ({
+        color: getCategoryMeta(b.category, userCats).color,
+        title: b.title,
+      }))
     }
     setDayEvents(result)
   }, [year, month, daysInMonth])
@@ -1003,18 +1012,20 @@ function MonthCalendarView({ currentDate, onSelectDate }: MonthViewProps) {
                     {day}
                   </div>
 
-                  {/* Event color bars */}
+                  {/* Event pills */}
                   <div className="w-full space-y-0.5 overflow-hidden">
                     {events.slice(0, 3).map((ev, ei) => (
                       <div
                         key={ei}
-                        className="h-1.5 rounded-full w-full"
-                        style={{ backgroundColor: ev.color }}
-                        title={ev.label}
-                      />
+                        className="w-full rounded px-1.5 py-0.5 truncate text-[10px] font-medium leading-tight text-white"
+                        style={{ backgroundColor: ev.color + 'CC' }}
+                        title={ev.title}
+                      >
+                        {ev.title}
+                      </div>
                     ))}
                     {events.length > 3 && (
-                      <p className="text-[9px] text-gray-400 dark:text-gray-500 leading-none pl-0.5">+{events.length - 3}</p>
+                      <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 leading-none pl-0.5">+{events.length - 3} more</p>
                     )}
                   </div>
                 </button>
@@ -1358,7 +1369,15 @@ const CAT_COLORS = [
   '#6EE7B7', '#67E8F9', '#CBD5E1',
 ]
 
-const CAT_EMOJIS: string[] = []
+const CAT_EMOJIS = [
+  '📚', '✏️', '💡', '🔬', '🖥️',
+  '💼', '📊', '📋', '🗂️', '📧',
+  '🏋️', '🧘', '🚴', '🏃', '⚽',
+  '🍎', '🥗', '🍳', '☕', '🍕',
+  '🎨', '🎵', '🎮', '🎭', '🎬',
+  '🛒', '🏠', '🚗', '✈️', '💊',
+  '💰', '📅', '🌿', '🐾', '🌙',
+]
 
 function PrefToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -1498,7 +1517,6 @@ function PreferencesMainView({ catSectionRef, onCreateSchedule, mealsEnabled, on
   const goalSliders: { key: keyof OnboardingGoals; enabledKey: keyof typeof enabled; label: string; min: number; max: number; step: number; unit: string; catId: string | null }[] = [
     { key: 'studyHoursPerWeek', enabledKey: 'study', label: 'Study', catId: 'study', min: 0, max: 40, step: 1, unit: 'hrs/week' },
     { key: 'workoutsPerWeek', enabledKey: 'workouts', label: 'Workouts', catId: 'gym', min: 0, max: 14, step: 1, unit: '× /week' },
-    { key: 'mealsPerDay', enabledKey: 'meals', label: 'Meals', catId: 'meal', min: 1, max: 6, step: 1, unit: '/day' },
     { key: 'sleepHours', enabledKey: 'sleep', label: 'Sleep', catId: null, min: 4, max: 12, step: 0.5, unit: 'hrs/night' },
     { key: 'workHoursPerWeek', enabledKey: 'work', label: 'Work', catId: 'work', min: 0, max: 60, step: 1, unit: 'hrs/week' },
   ]
@@ -1720,7 +1738,7 @@ function PreferencesMainView({ catSectionRef, onCreateSchedule, mealsEnabled, on
               >
                 <div
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0"
-                  style={{ backgroundColor: cat.color + '30' }}
+                  style={{ backgroundColor: cat.color + '18', border: `1.5px solid ${cat.color}40` }}
                 >
                   {cat.emoji}
                 </div>
@@ -1939,21 +1957,81 @@ const DEFAULT_PRIVACY = { class: true, study: true, gym: true, meal: true, work:
 
 function ProfileView() {
   const router = useRouter()
+  const { user, deleteAccount, deactivateAccount, sendPasswordResetEmail: sendReset } = useAuth()
+  const { saveProfile: saveProfileCloud } = useCloudSync(user?.uid)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('daycal_profile_name') ?? '')
   const [username, setUsername] = useState(() => localStorage.getItem('daycal_profile_username') ?? '')
   const [bio, setBio] = useState(() => localStorage.getItem('daycal_profile_bio') ?? '')
+  const [photoURL, setPhotoURL] = useState(() => localStorage.getItem('daycal_profile_photo') ?? '')
   const [saved, setSaved] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [usernameError, setUsernameError] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const originalUsername = useRef(localStorage.getItem('daycal_profile_username') ?? '')
+  const [dangerAction, setDangerAction] = useState<'delete' | 'deactivate' | 'reset-password' | null>(null)
+  const [dangerConfirmText, setDangerConfirmText] = useState('')
+  const [dangerWorking, setDangerWorking] = useState(false)
+  const [dangerError, setDangerError] = useState('')
+  const [dangerDone, setDangerDone] = useState('')
   const [privacy, setPrivacy] = useState<typeof DEFAULT_PRIVACY>(() => {
     try { return JSON.parse(localStorage.getItem('daycal_privacy') ?? 'null') ?? DEFAULT_PRIVACY }
     catch { return DEFAULT_PRIVACY }
   })
 
-  const saveProfile = () => {
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !user || !isFirebaseConfigured || !storage) return
+    setUploadingPhoto(true)
+    try {
+      const fileRef = storageRef(storage, `profile-photos/${user.uid}`)
+      await uploadBytes(fileRef, file)
+      const url = await getDownloadURL(fileRef)
+      setPhotoURL(url)
+      localStorage.setItem('daycal_profile_photo', url)
+      saveProfileCloud({ displayName, username, bio, photoURL: url })
+    } catch (err) {
+      console.error('Photo upload failed', err)
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setUsernameError('')
+    const usernameChanged = username.trim() !== originalUsername.current
+    if (usernameChanged && !confirming) {
+      setConfirming(true)
+      return
+    }
+    if (usernameChanged && isFirebaseConfigured && db && user) {
+      setChecking(true)
+      try {
+        const snap = await getDoc(doc(db, 'usernames', username.trim()))
+        if (snap.exists() && snap.data().uid !== user.uid) {
+          setUsernameError('That username is already taken')
+          setConfirming(false)
+          setChecking(false)
+          return
+        }
+        await setDoc(doc(db, 'usernames', username.trim()), { uid: user.uid })
+        if (originalUsername.current) {
+          await deleteDoc(doc(db, 'usernames', originalUsername.current)).catch(() => {})
+        }
+      } catch {
+        // Firestore unavailable — skip uniqueness check
+      }
+      setChecking(false)
+    }
+    originalUsername.current = username.trim()
     localStorage.setItem('daycal_profile_name', displayName)
-    localStorage.setItem('daycal_profile_username', username)
+    localStorage.setItem('daycal_profile_username', username.trim())
     localStorage.setItem('daycal_profile_bio', bio)
+    saveProfileCloud({ displayName, username: username.trim(), bio, photoURL })
     setSaved(true)
+    setConfirming(false)
     setTimeout(() => setSaved(false), 2000)
   }
 
@@ -1963,22 +2041,46 @@ function ProfileView() {
     localStorage.setItem('daycal_privacy', JSON.stringify(next))
   }
 
-  const handleReset = () => {
-    if (confirm('Reset onboarding? This will clear your goals and redirect to the setup screen.')) {
-      localStorage.removeItem('daycal_onboarded')
-      localStorage.removeItem('daycal_goals')
-      router.push('/onboarding')
+  const handleDangerConfirm = async () => {
+    setDangerError('')
+    setDangerWorking(true)
+    try {
+      if (dangerAction === 'delete') {
+        if (dangerConfirmText !== 'DELETE') { setDangerError('Type DELETE to confirm'); setDangerWorking(false); return }
+        await deleteAccount()
+        router.replace('/login')
+      } else if (dangerAction === 'deactivate') {
+        if (dangerConfirmText !== 'DEACTIVATE') { setDangerError('Type DEACTIVATE to confirm'); setDangerWorking(false); return }
+        await deactivateAccount()
+        router.replace('/login')
+      } else if (dangerAction === 'reset-password') {
+        if (!user?.email) { setDangerError('No email on file'); setDangerWorking(false); return }
+        await sendReset(user.email)
+        setDangerDone('Password reset email sent!')
+        setDangerAction(null)
+        setDangerConfirmText('')
+      }
+    } catch (err: unknown) {
+      const msg = (err as { message?: string })?.message ?? 'Something went wrong'
+      if (msg.includes('requires-recent-login')) {
+        setDangerError('Please sign out and sign back in, then try again.')
+      } else {
+        setDangerError(msg)
+      }
+    } finally {
+      setDangerWorking(false)
     }
   }
 
   const initials = (displayName || 'U').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
-  const privacyItems: { key: keyof typeof DEFAULT_PRIVACY; label: string; desc: string }[] = [
-    { key: 'class', label: 'Classes', desc: 'Show class blocks to friends' },
-    { key: 'study', label: 'Study sessions', desc: 'Show study blocks to friends' },
-    { key: 'gym', label: 'Gym & exercise', desc: 'Show gym blocks to friends' },
-    { key: 'meal', label: 'Meals', desc: 'Show meal blocks to friends' },
-    { key: 'work', label: 'Work', desc: 'Show work blocks to friends' },
-    { key: 'mealPhotos', label: 'Meal photos', desc: 'Share meal photos in social feed' },
+  const usernameChanged = username.trim() !== originalUsername.current
+  const privacyItems: { key: keyof typeof DEFAULT_PRIVACY; label: string; desc: string; icon: React.ElementType; color: string; bg: string }[] = [
+    { key: 'class', label: 'Classes', desc: 'Show class blocks to friends', icon: GraduationCap, color: '#6366F1', bg: '#EEF2FF' },
+    { key: 'study', label: 'Study sessions', desc: 'Show study blocks to friends', icon: BookOpen, color: '#8B5CF6', bg: '#F5F3FF' },
+    { key: 'gym', label: 'Gym & exercise', desc: 'Show gym blocks to friends', icon: Dumbbell, color: '#10B981', bg: '#ECFDF5' },
+    { key: 'meal', label: 'Meals', desc: 'Show meal blocks to friends', icon: Utensils, color: '#F59E0B', bg: '#FFFBEB' },
+    { key: 'work', label: 'Work', desc: 'Show work blocks to friends', icon: Briefcase, color: '#3B82F6', bg: '#EFF6FF' },
+    { key: 'mealPhotos', label: 'Meal photos', desc: 'Share meal photos in social feed', icon: Camera, color: '#EC4899', bg: '#FDF2F8' },
   ]
 
   return (
@@ -1988,12 +2090,25 @@ function ProfileView() {
       <div className="bg-white dark:bg-[#1C1C1E] rounded-2xl border border-gray-100 dark:border-[#38383A] p-5">
         <div className="flex items-center gap-4 mb-5">
           <div className="relative">
-            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-xl font-bold text-blue-600 dark:text-blue-400">
-              {initials}
-            </div>
-            <button className="absolute -bottom-1 -right-1 w-6 h-6 bg-gray-800 dark:bg-gray-200 rounded-full flex items-center justify-center">
-              <Camera size={11} className="text-white dark:text-gray-800" />
+            {photoURL ? (
+              <img src={photoURL} alt="Profile" className="w-16 h-16 rounded-full object-cover" />
+            ) : (
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-xl font-bold text-blue-600 dark:text-blue-400">
+                {initials}
+              </div>
+            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingPhoto}
+              className="absolute -bottom-1 -right-1 w-6 h-6 bg-gray-800 dark:bg-gray-200 rounded-full flex items-center justify-center hover:opacity-80 transition-opacity"
+            >
+              {uploadingPhoto ? (
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera size={11} className="text-white dark:text-gray-800" />
+              )}
             </button>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
           </div>
           <div>
             <p className="font-bold text-gray-900 dark:text-gray-50">{displayName || 'Your Name'}</p>
@@ -2013,15 +2128,16 @@ function ProfileView() {
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1.5">Username</label>
-            <div className="flex items-center bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-[#38383A] rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all">
-              <span className="text-gray-400 text-sm mr-1">@</span>
+            <div className={['flex items-center bg-gray-50 dark:bg-[#2C2C2E] border rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-400 focus-within:border-blue-400 transition-all', usernameError ? 'border-red-400' : 'border-gray-200 dark:border-[#38383A]'].join(' ')}>
+              <span className="text-gray-400 text-sm">@</span>
               <input
                 value={username}
-                onChange={e => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                onChange={e => { setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, '')); setUsernameError(''); setConfirming(false) }}
                 placeholder="username"
                 className="flex-1 bg-transparent text-sm text-gray-900 dark:text-gray-50 placeholder-gray-400 outline-none"
               />
             </div>
+            {usernameError && <p className="text-xs text-red-500 mt-1">{usernameError}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1.5">Bio</label>
@@ -2033,12 +2149,29 @@ function ProfileView() {
               className="w-full bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-[#38383A] rounded-xl px-3 py-2.5 text-sm text-gray-900 dark:text-gray-50 placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all resize-none"
             />
           </div>
-          <button
-            onClick={saveProfile}
-            className={['w-full text-sm font-semibold rounded-xl py-2.5 transition-all', saved ? 'bg-green-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'].join(' ')}
-          >
-            {saved ? 'Saved!' : 'Save Profile'}
-          </button>
+          {confirming && usernameChanged ? (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-2">
+              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                Change username from <strong>@{originalUsername.current || '—'}</strong> to <strong>@{username}</strong>? This cannot be undone easily.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={handleSave} disabled={checking} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg py-2 transition-colors disabled:opacity-60">
+                  {checking ? 'Checking…' : 'Confirm change'}
+                </button>
+                <button onClick={() => { setConfirming(false); setUsername(originalUsername.current) }} className="flex-1 bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-lg py-2 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={handleSave}
+              disabled={saved || checking}
+              className={['w-full text-sm font-semibold rounded-xl py-2.5 transition-all', saved ? 'bg-green-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-60'].join(' ')}
+            >
+              {saved ? 'Saved!' : checking ? 'Checking…' : 'Save Profile'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -2050,8 +2183,11 @@ function ProfileView() {
         </div>
         <p className="px-4 pb-3 text-xs text-gray-400 dark:text-gray-500">Choose which block types friends can see on your schedule</p>
         <div className="divide-y divide-gray-100 dark:divide-[#38383A]">
-          {privacyItems.map(({ key, label, desc }) => (
+          {privacyItems.map(({ key, label, desc, icon: Icon, color, bg }) => (
             <div key={key} className="px-4 py-3 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: bg }}>
+                <Icon size={15} style={{ color }} />
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{label}</p>
                 <p className="text-xs text-gray-400 dark:text-gray-500">{desc}</p>
@@ -2075,16 +2211,98 @@ function ProfileView() {
         </div>
         <div className="px-4 py-3.5 flex items-center justify-between">
           <span className="text-sm text-gray-700 dark:text-gray-300">Storage</span>
-          <span className="text-xs text-gray-400">Local device only</span>
+          <span className="text-xs text-green-500 font-medium">Cloud synced</span>
         </div>
       </div>
 
-      <button
-        onClick={handleReset}
-        className="w-full text-sm text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl py-3 font-medium transition-colors"
-      >
-        Redo Onboarding
-      </button>
+      {/* Danger Zone */}
+      <div className="bg-white dark:bg-[#1C1C1E] rounded-2xl border border-red-100 dark:border-red-900/40 overflow-hidden">
+        <div className="px-4 pt-4 pb-2">
+          <p className="text-sm font-bold text-red-600 dark:text-red-400">Danger Zone</p>
+        </div>
+        <div className="divide-y divide-red-50 dark:divide-red-900/20 px-4 pb-4 space-y-2">
+          {/* Reset password */}
+          <div className="pt-2">
+            <button
+              onClick={() => { setDangerAction('reset-password'); setDangerConfirmText(''); setDangerError(''); setDangerDone('') }}
+              className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Send password reset email
+            </button>
+            {dangerDone && <p className="text-xs text-green-600 dark:text-green-400 mt-1">{dangerDone}</p>}
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={() => { setDangerAction('deactivate'); setDangerConfirmText(''); setDangerError('') }}
+              className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
+            >
+              Deactivate account
+            </button>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Hides your account. You can reactivate by signing in again.</p>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={() => { setDangerAction('delete'); setDangerConfirmText(''); setDangerError('') }}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
+            >
+              Delete account permanently
+            </button>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">All your data will be erased. This cannot be undone.</p>
+          </div>
+        </div>
+
+        {/* Confirmation form */}
+        {dangerAction && dangerAction !== 'reset-password' && (
+          <div className="mx-4 mb-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 space-y-2">
+            <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+              {dangerAction === 'delete'
+                ? 'Type DELETE to permanently delete your account and all data.'
+                : 'Type DEACTIVATE to hide your account.'}
+            </p>
+            <input
+              value={dangerConfirmText}
+              onChange={(e) => setDangerConfirmText(e.target.value)}
+              placeholder={dangerAction === 'delete' ? 'DELETE' : 'DEACTIVATE'}
+              className="w-full bg-white dark:bg-[#2C2C2E] border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-red-400"
+            />
+            {dangerError && <p className="text-xs text-red-600 dark:text-red-400">{dangerError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={handleDangerConfirm}
+                disabled={dangerWorking}
+                className="flex-1 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-semibold rounded-lg py-2 transition-colors"
+              >
+                {dangerWorking ? 'Working…' : dangerAction === 'delete' ? 'Delete forever' : 'Deactivate'}
+              </button>
+              <button
+                onClick={() => { setDangerAction(null); setDangerConfirmText(''); setDangerError('') }}
+                className="flex-1 bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-lg py-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {dangerAction === 'reset-password' && (
+          <div className="mx-4 mb-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              Send a password reset link to <strong>{user?.email}</strong>?
+            </p>
+            {dangerError && <p className="text-xs text-red-600">{dangerError}</p>}
+            <div className="flex gap-2">
+              <button onClick={handleDangerConfirm} disabled={dangerWorking} className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-semibold rounded-lg py-2 transition-colors">
+                {dangerWorking ? 'Sending…' : 'Send email'}
+              </button>
+              <button onClick={() => setDangerAction(null)} className="flex-1 bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-lg py-2">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

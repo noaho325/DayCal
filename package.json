@@ -14,9 +14,13 @@
     "appId": "com.daycal.app",
     "productName": "DayCal",
     "asar": true,
+    "afterPack": "./scripts/afterPack.js",
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "public/icon-512.png",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null,
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] }
       ]

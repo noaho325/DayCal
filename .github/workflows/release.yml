@@ -8,10 +8,15 @@ on:
 jobs:
   build-mac:
     runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
+    permissions:
+      contents: write
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -19,25 +24,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Set up env
+      - name: Copy env
         run: cp .env.example .env.local
 
-      - name: Build & package
-        run: npm run electron:build
+      - name: Build
+        run: CSC_IDENTITY_AUTO_DISCOVERY=false npm run electron:build
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
+          name: DayCal ${{ github.ref_name }}
           body: |
-            ## DayCal ${{ github.ref_name }}
+            ## Install
+            1. Download the `.dmg` for your Mac:
+               - **Apple Silicon (M1/M2/M3/M4)** → `DayCal-*-arm64.dmg`
+               - **Intel Mac** → `DayCal-*.dmg`
+            2. Open the `.dmg` and drag **DayCal** to Applications
+            3. Launch from Applications or your Dock
 
-            ### Install
-            1. Download the `.dmg` below
-            2. Open it and drag **DayCal** to your Applications folder
-            3. Open DayCal from your Applications or Dock
+            > **First launch:** if macOS says "unidentified developer", go to **System Settings → Privacy & Security** → scroll down → click **Open Anyway**
 
-            > **First launch on Mac:** if you see "unidentified developer", go to
-            > System Settings → Privacy & Security → scroll down → click **Open Anyway**
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            Your data is cloud-synced — nothing is lost when updating.
+          files: dist/*.dmg
+          draft: false
+          prerelease: false

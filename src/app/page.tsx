@@ -196,6 +196,7 @@ export default function HomePage() {
   const profileRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
+  const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron')
   const [hydration, setHydration] = useState(0)
 
   useEffect(() => {
@@ -430,7 +431,12 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#FAFAFA] dark:bg-[#0F0F10] overflow-hidden">
+    <div className={`flex h-screen bg-[#FAFAFA] dark:bg-[#0F0F10] overflow-hidden ${isElectron ? 'pt-[38px]' : ''}`}>
+
+      {/* ── Electron draggable title bar region ── */}
+      {isElectron && (
+        <div className="fixed top-0 left-0 right-0 h-[38px] z-50" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+      )}
 
       {/* ── Mobile sidebar overlay (sm only) ── */}
       {sidebarOpen && (

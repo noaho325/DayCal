@@ -43,7 +43,7 @@ Requires Node.js 20+.
 git clone https://github.com/noaho325/DayCal.git
 cd DayCal
 npm install
-cp .env.example .env.local
+# No setup needed — Firebase config is built in
 npm run electron:build   # outputs dist/DayCal.dmg
 ```
 

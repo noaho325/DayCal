@@ -1,6 +1,6 @@
 const { app, BrowserWindow, shell } = require('electron')
 const path = require('path')
-const serve = require('electron-serve')
+const serve = require('electron-serve').default
 
 const loadURL = serve({ directory: path.join(__dirname, '..', 'out') })
 

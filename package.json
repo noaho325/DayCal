@@ -20,7 +20,7 @@
       "icon": "public/icon-512.png",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "identity": null,
+      "sign": "./scripts/sign.js",
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] }
       ]

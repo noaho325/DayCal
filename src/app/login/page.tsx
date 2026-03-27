@@ -62,8 +62,8 @@ export default function LoginPage() {
   if (!mounted || loading) return null
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#0F0F10] flex items-center justify-center p-6">
-      <div className="w-full max-w-4xl flex rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-[#1C1C1E] border border-gray-100 dark:border-[#38383A]">
+    <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#0F0F10] flex items-center justify-center p-6" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      <div className="w-full max-w-4xl flex rounded-3xl overflow-hidden shadow-2xl bg-white dark:bg-[#1C1C1E] border border-gray-100 dark:border-[#38383A]" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
 
         {/* Left panel — branding */}
         <div className="hidden md:flex md:w-1/2 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 flex-col justify-between p-10 text-white relative overflow-hidden">

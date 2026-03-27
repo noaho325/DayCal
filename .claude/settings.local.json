@@ -18,7 +18,16 @@
       "Bash(grep -v \"^$\")",
       "Bash(node scripts/generate-icons.js)",
       "Bash(ls -lh public/icon-*.png)",
-      "Bash(chmod +x /Users/noah/Desktop/Daysync/start.command)"
+      "Bash(chmod +x /Users/noah/Desktop/Daysync/start.command)",
+      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false npm run electron:build)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''build'''', {}\\), indent=2\\)\\)\")",
+      "Bash(/opt/homebrew/bin/gh auth:*)",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(PATH=\"/opt/homebrew/opt/node@20/bin:$PATH\" node --version)",
+      "Bash(PATH=\"/opt/homebrew/opt/node@20/bin:$PATH\" CSC_IDENTITY_AUTO_DISCOVERY=false npm run electron:build)",
+      "Bash(PATH=\"/opt/homebrew/opt/node@20/bin:$PATH\" npm install)",
+      "Bash(PATH=\"/opt/homebrew/opt/node@20/bin:$PATH\" CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder)"
     ]
   }
 }

@@ -265,6 +265,40 @@ export default function HomePage() {
     }
   }, [weekProgress.weeklyPoints, user?.uid, saveWeeklyPoints])
 
+  // Helper: write a feed event for the current user
+  const writeFeedEvent = useCallback(async (type: string, content: string, extra?: Record<string, unknown>) => {
+    if (!user?.uid || !isFirebaseConfigured || !db) return
+    try {
+      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore')
+      await addDoc(collection(db, 'users', user.uid, 'feedEvents'), {
+        type, content, timestamp: serverTimestamp(), likedBy: [], likes: 0, ...extra,
+      })
+    } catch {}
+  }, [user?.uid])
+
+  // Wrapped completeBlock: writes a feed event when completing (not un-completing)
+  const handleCompleteBlock = useCallback((id: string) => {
+    const block = blocks.find(b => b.id === id)
+    const isCompleting = block?.status !== 'completed'
+    completeBlock(id)
+    if (isCompleting && block && currentDate === today) {
+      writeFeedEvent('completed', `completed "${block.title}" ✅`)
+    }
+  }, [blocks, completeBlock, writeFeedEvent, currentDate, today])
+
+  // Wrapped updateBlock: writes a feed event when a meal photo is newly added
+  const handleUpdateBlock = useCallback((id: string, changes: Partial<TimeBlock>) => {
+    const prev = blocks.find(b => b.id === id)
+    const isNewPhoto = changes.mealPhotoURL && changes.mealPhotoURL !== prev?.mealPhotoURL
+    updateBlock(id, changes)
+    if (isNewPhoto && currentDate === today) {
+      writeFeedEvent('meal_photo', `shared a meal photo 📸`, {
+        mealName: changes.mealName ?? prev?.mealName ?? 'Meal',
+        photoURL: changes.mealPhotoURL,
+      })
+    }
+  }, [blocks, updateBlock, writeFeedEvent, currentDate, today])
+
   // Write streak feed events when streak increases
   const prevStreakRef = useRef(0)
   useEffect(() => {
@@ -618,13 +652,13 @@ export default function HomePage() {
                     <Timeline
                       blocks={blocks}
                       onAddBlock={addBlock}
-                      onUpdateBlock={updateBlock}
+                      onUpdateBlock={handleUpdateBlock}
                       onDeleteBlock={deleteBlock}
                       onDelayBlock={delayBlock}
                       onPushAllBack={pushAllBack}
                       onSkipBlock={skipBlock}
                       onExcuseBlock={excuseBlock}
-                      onCompleteBlock={completeBlock}
+                      onCompleteBlock={handleCompleteBlock}
                       onUndo={undo}
                       canUndo={canUndo}
                       onAddNewCategory={() => {

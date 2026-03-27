@@ -52,6 +52,24 @@ export function useAuth(): UseAuthReturn {
     const { user } = await createUserWithEmailAndPassword(auth, email, password)
     await updateProfile(user, { displayName })
     await sendEmailVerification(user).catch((e) => console.warn('Verification email failed:', e))
+    // Initialize Firestore profile so friends can find this user
+    try {
+      const { db: firestoreDb, isFirebaseConfigured: ifc } = await import('@/lib/firebase')
+      if (ifc && firestoreDb) {
+        const { doc, setDoc, serverTimestamp } = await import('firebase/firestore')
+        await setDoc(doc(firestoreDb, 'users', user.uid, 'profile', 'data'), {
+          displayName,
+          username: '',
+          bio: '',
+          photoURL: null,
+          weeklyPoints: 0,
+          streak: { current: 0, longest: 0, lastActiveDate: null },
+          createdAt: serverTimestamp(),
+        })
+      }
+    } catch (e) {
+      console.warn('Profile init failed:', e)
+    }
     setState((prev) => ({ ...prev, user }))
   }
 

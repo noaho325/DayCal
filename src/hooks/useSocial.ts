@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { isFirebaseConfigured, db } from '@/lib/firebase'
 import type { Friend, FeedItem, LeaderboardEntry } from '@/types'
 
@@ -67,48 +67,72 @@ export function useSocial(userId: string | undefined) {
     return () => { if (unsubscribe) unsubscribe() }
   }, [userId])
 
+  // Real-time feed listeners keyed by friend id — cleaned up on unmount
+  const feedUnsubsRef = useRef<Map<string, () => void>>(new Map())
+  const feedItemsRef = useRef<Map<string, FeedItem[]>>(new Map())
+  useEffect(() => () => { feedUnsubsRef.current.forEach(u => u()) }, [])
+
+  const rebuildFeed = useCallback(() => {
+    const all: FeedItem[] = []
+    feedItemsRef.current.forEach(items => all.push(...items))
+    all.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    setFeed(all.slice(0, 40))
+    setFeedLoading(false)
+  }, [])
+
   const loadFeed = useCallback(async (acceptedFriends: Friend[]) => {
     if (!isFirebaseConfigured || !db || !userId) return
-    if (acceptedFriends.length === 0) { setFeed([]); return }
+    if (acceptedFriends.length === 0) {
+      feedUnsubsRef.current.forEach(u => u())
+      feedUnsubsRef.current.clear()
+      feedItemsRef.current.clear()
+      setFeed([])
+      return
+    }
     setFeedLoading(true)
-    try {
-      const { collection, getDocs, query, orderBy, limit } = await import('firebase/firestore')
-      const allItems: FeedItem[] = []
-      await Promise.all(acceptedFriends.map(async (friend) => {
-        try {
-          const q = query(
-            collection(db!, 'users', friend.id, 'feedEvents'),
-            orderBy('timestamp', 'desc'),
-            limit(10)
-          )
-          const snap = await getDocs(q)
-          snap.docs.forEach(d => {
-            const r = d.data()
-            allItems.push({
-              id: `${friend.id}_${d.id}`,
-              eventId: d.id,
-              ownerId: friend.id,
-              userId: friend.id,
-              username: friend.username,
-              displayName: friend.displayName,
-              photoURL: friend.photoURL,
-              type: r.type,
-              content: r.content,
-              timestamp: r.timestamp?.toDate() ?? new Date(),
-              mealPhotoURL: r.photoURL,
-              mealName: r.mealName,
-              likedBy: r.likedBy ?? [],
-              liked: (r.likedBy ?? []).includes(userId),
-              likes: r.likes ?? 0,
-            })
-          })
-        } catch { /* skip this friend */ }
-      }))
-      allItems.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      setFeed(allItems.slice(0, 40))
-    } catch {}
-    setFeedLoading(false)
-  }, [userId])
+    const { collection, query, orderBy, limit, onSnapshot } = await import('firebase/firestore')
+    const currentIds = new Set(acceptedFriends.map(f => f.id))
+
+    // Remove listeners for friends no longer in the list
+    feedUnsubsRef.current.forEach((unsub, fid) => {
+      if (!currentIds.has(fid)) { unsub(); feedUnsubsRef.current.delete(fid); feedItemsRef.current.delete(fid) }
+    })
+
+    // Add listeners for new friends
+    acceptedFriends.forEach(friend => {
+      if (feedUnsubsRef.current.has(friend.id)) return
+      const q = query(
+        collection(db!, 'users', friend.id, 'feedEvents'),
+        orderBy('timestamp', 'desc'),
+        limit(10)
+      )
+      const unsub = onSnapshot(q, snap => {
+        const items: FeedItem[] = snap.docs.map(d => {
+          const r = d.data()
+          return {
+            id: `${friend.id}_${d.id}`,
+            eventId: d.id,
+            ownerId: friend.id,
+            userId: friend.id,
+            username: friend.username,
+            displayName: friend.displayName,
+            photoURL: friend.photoURL,
+            type: r.type,
+            content: r.content,
+            timestamp: r.timestamp?.toDate() ?? new Date(),
+            mealPhotoURL: r.photoURL,
+            mealName: r.mealName,
+            likedBy: r.likedBy ?? [],
+            liked: (r.likedBy ?? []).includes(userId!),
+            likes: r.likes ?? 0,
+          }
+        })
+        feedItemsRef.current.set(friend.id, items)
+        rebuildFeed()
+      }, () => { feedItemsRef.current.set(friend.id, []); rebuildFeed() })
+      feedUnsubsRef.current.set(friend.id, unsub)
+    })
+  }, [userId, rebuildFeed])
 
   const loadLeaderboard = useCallback(async (currentUser: CurrentUserStats, acceptedFriends: Friend[]) => {
     if (!userId) return

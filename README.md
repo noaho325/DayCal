@@ -2,6 +2,8 @@
 
 A smart daily schedule planner with social features — build your day, track streaks, and stay in sync with friends.
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fnoaho325%2FDayCal&env=NEXT_PUBLIC_FIREBASE_API_KEY,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,NEXT_PUBLIC_FIREBASE_PROJECT_ID,NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,NEXT_PUBLIC_FIREBASE_APP_ID&envDescription=Firebase%20config%20from%20.env.example&envLink=https%3A%2F%2Fgithub.com%2Fnoaho325%2FDayCal%2Fblob%2Fmain%2F.env.example)
+
 ## Features
 
 - 📅 **Day / Week / Month views** — drag, delay, and manage your schedule
@@ -79,12 +81,10 @@ All data lives in the cloud so nothing is lost on update.
 
 ## Deploying
 
-The easiest way to deploy is [Vercel](https://vercel.com):
-
-1. Push your fork to GitHub
-2. Import the repo at [vercel.com/new](https://vercel.com/new)
-3. Add the environment variables from `.env.example` in Vercel project settings
-4. Deploy — done
+Click the **Deploy with Vercel** button at the top of this page. It will:
+1. Fork the repo to your GitHub account
+2. Prompt you to fill in the Firebase env vars (copy them from `.env.example`)
+3. Deploy automatically — you'll get a live URL in ~1 minute
 
 ---
 

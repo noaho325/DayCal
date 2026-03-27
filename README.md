@@ -2,19 +2,17 @@
 
 A smart daily schedule planner with social features — build your day, track streaks, and stay in sync with friends.
 
-## Install on Mac (no terminal needed)
+## Download
 
-1. Click **Code → Download ZIP** on this page
-2. Unzip the folder
-3. Double-click **`start.command`**
-4. The app opens at `http://localhost:3000`
+Go to the [**Releases**](https://github.com/noaho325/DayCal/releases) page and download the latest `.dmg`.
 
-**To add it to your Dock as a real app:**
-- Open `http://localhost:3000` in **Chrome**
-- Click the install icon (⊕) in the address bar → **Install**
-- DayCal appears in your Dock and Applications folder like any other app
+### Install
+1. Open the `.dmg` file
+2. Drag **DayCal** into your Applications folder
+3. Open it from Applications or your Dock
 
-> First launch takes ~1 minute to install dependencies and build. Every launch after that is instant.
+> **First launch:** macOS may say "unidentified developer" since the app isn't signed.
+> Go to **System Settings → Privacy & Security** → scroll down → click **Open Anyway**.
 
 ---
 
@@ -30,26 +28,33 @@ A smart daily schedule planner with social features — build your day, track st
 
 ---
 
-## Staying Up to Date
+## Updates
 
-When updates are pushed, download the new ZIP and double-click `start.command` again. Your data is in the cloud so nothing is lost.
+New releases appear on the [Releases](https://github.com/noaho325/DayCal/releases) page.
+Download the new `.dmg`, drag it to Applications to replace the old version. Your data is in the cloud so nothing is lost.
 
-Or if you used `git clone`:
+---
+
+## Build from Source
+
+Requires Node.js 20+.
 
 ```bash
-git pull
-npm run build
-npm start
+git clone https://github.com/noaho325/DayCal.git
+cd DayCal
+npm install
+cp .env.example .env.local
+npm run electron:build   # outputs dist/DayCal.dmg
 ```
 
 ---
 
 ## Tech Stack
 
-- [Next.js 14](https://nextjs.org/) — App Router, TypeScript
+- [Next.js](https://nextjs.org/) — App Router, TypeScript, static export
+- [Electron](https://www.electronjs.org/) — desktop wrapper
 - [Tailwind CSS](https://tailwindcss.com/) — styling
 - [Firebase](https://firebase.google.com/) — Auth, Firestore, Storage
-- [Lucide React](https://lucide.dev/) — icons
 
 ---
 

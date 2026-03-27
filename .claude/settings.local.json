@@ -9,7 +9,16 @@
       "Read(//tmp/**)",
       "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --yes)",
       "Bash(npx tsc:*)",
-      "Bash(jq .message.content[0].text)"
+      "Bash(jq .message.content[0].text)",
+      "Bash(kill 79818)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(node scripts/generate-icons.js)",
+      "Bash(ls -lh public/icon-*.png)",
+      "Bash(chmod +x /Users/noah/Desktop/Daysync/start.command)"
     ]
   }
 }

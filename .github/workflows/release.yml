@@ -1,0 +1,43 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up env
+        run: cp .env.example .env.local
+
+      - name: Build & package
+        run: npm run electron:build
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          body: |
+            ## DayCal ${{ github.ref_name }}
+
+            ### Install
+            1. Download the `.dmg` below
+            2. Open it and drag **DayCal** to your Applications folder
+            3. Open DayCal from your Applications or Dock
+
+            > **First launch on Mac:** if you see "unidentified developer", go to
+            > System Settings → Privacy & Security → scroll down → click **Open Anyway**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

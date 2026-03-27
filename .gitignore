@@ -20,6 +20,9 @@
 # production
 /build
 
+# electron build output (DMGs go to GitHub Releases, not git)
+/dist/
+
 # misc
 .DS_Store
 *.pem

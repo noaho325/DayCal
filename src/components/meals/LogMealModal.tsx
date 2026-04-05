@@ -95,12 +95,8 @@ export function LogMealModal({ isOpen, onClose, onSave, defaultHour, defaultDate
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl overflow-hidden">
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 bg-gray-200 rounded-full" />
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden mx-4">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3">

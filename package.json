@@ -41,27 +41,27 @@
     ]
   },
   "dependencies": {
+    "electron-serve": "^3.0.1"
+  },
+  "devDependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "date-fns": "^4.1.0",
-    "electron-serve": "^3.0.1",
+    "electron": "^41.0.4",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.1",
     "firebase": "^12.11.0",
     "lucide-react": "^1.0.1",
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-hot-toast": "^2.6.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "electron": "^41.0.4",
-    "electron-builder": "^26.8.1",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.1",
+    "react-hot-toast": "^2.6.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

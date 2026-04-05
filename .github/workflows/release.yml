@@ -26,6 +26,8 @@ jobs:
 
       - name: Build
         run: CSC_IDENTITY_AUTO_DISCOVERY=false npm run electron:build -- --publish never
+        env:
+          NEXT_PUBLIC_APP_VERSION: ${{ github.ref_name }}
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2

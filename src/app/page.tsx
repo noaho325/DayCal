@@ -2323,7 +2323,7 @@ function ProfileView() {
       <div className="bg-white dark:bg-[#1C1C1E] rounded-2xl border border-gray-100 dark:border-[#38383A] divide-y divide-gray-100 dark:divide-[#38383A]">
         <div className="px-4 py-3.5 flex items-center justify-between">
           <span className="text-sm text-gray-700 dark:text-gray-300">App version</span>
-          <span className="text-xs text-gray-400 bg-gray-100 dark:bg-[#2C2C2E] rounded-full px-2.5 py-1 font-mono">1.0.0-mvp</span>
+          <span className="text-xs text-gray-400 bg-gray-100 dark:bg-[#2C2C2E] rounded-full px-2.5 py-1 font-mono">{process.env.NEXT_PUBLIC_APP_VERSION ?? '—'}</span>
         </div>
         <div className="px-4 py-3.5 flex items-center justify-between">
           <span className="text-sm text-gray-700 dark:text-gray-300">Storage</span>

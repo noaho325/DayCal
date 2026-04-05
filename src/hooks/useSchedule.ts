@@ -269,47 +269,41 @@ export function useSchedule(date: string, userId?: string): UseScheduleReturn {
     const autoComplete = () => {
       const now = new Date()
       const nowMinutes = now.getHours() * 60 + now.getMinutes()
-      setBlocksRaw((prev) => {
+      setBlocks((prev) => {
         const updated = prev.map((b) => {
           if (b.status !== 'upcoming' && b.status !== 'in-progress') return b
           const [endH, endM] = b.endTime.split(':').map(Number)
           if (nowMinutes >= endH * 60 + endM) return { ...b, status: 'completed' as const }
           return b
         })
-        if (updated.some((b, i) => b.status !== prev[i].status)) {
-          saveToLocalStorage(date, updated)
-          return updated
-        }
-        return prev
+        return updated.some((b, i) => b.status !== prev[i].status) ? updated : prev
       })
     }
 
     autoComplete()
     const interval = setInterval(autoComplete, 60_000)
     return () => clearInterval(interval)
-  }, [date, loading])
+  }, [date, loading, setBlocks])
 
   const undo = useCallback(() => {
     setUndoStack((prevUndo) => {
       if (prevUndo.length === 0) return prevUndo
       const [last, ...rest] = prevUndo
       setRedoStack((prevRedo) => [{ type: last.type, previousBlocks: blocks }, ...prevRedo])
-      setBlocksRaw(sortBlocks(last.previousBlocks))
-      saveToLocalStorage(date, last.previousBlocks)
+      setBlocks(() => last.previousBlocks)
       return rest
     })
-  }, [blocks, date])
+  }, [blocks, setBlocks])
 
   const redo = useCallback(() => {
     setRedoStack((prevRedo) => {
       if (prevRedo.length === 0) return prevRedo
       const [last, ...rest] = prevRedo
       setUndoStack((prevUndo) => [{ type: last.type, previousBlocks: blocks }, ...prevUndo])
-      setBlocksRaw(sortBlocks(last.previousBlocks))
-      saveToLocalStorage(date, last.previousBlocks)
+      setBlocks(() => last.previousBlocks)
       return rest
     })
-  }, [blocks, date])
+  }, [blocks, setBlocks])
 
   const handleSetHydration = useCallback(
     (n: number) => {

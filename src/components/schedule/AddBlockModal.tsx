@@ -17,8 +17,9 @@ import {
   X,
   Plus,
 } from 'lucide-react'
-import type { TimeBlock, BlockCategory, BlockPriority, RecurringPattern, SavedTask, UserCategory } from '@/types'
+import type { TimeBlock, BlockCategory, BlockPriority, RecurringPattern, SavedTask, UserCategory, ExamSubject } from '@/types'
 import { CATEGORY_META, BUILTIN_CATEGORY_ORDER, PRIORITY_META, getCategoryMeta, loadUserCategories } from '@/utils/constants'
+import { loadExams } from './ExamPlanner'
 import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/shared/Button'
 import { timeToMinutes, addMinutesToTime } from '@/utils/formatters'
@@ -117,6 +118,7 @@ const EMPTY_FORM = {
   mealName: '',
   color: '',
   saveAsTemplate: false,
+  examSubjectId: undefined as string | undefined,
 }
 
 export const AddBlockModal: React.FC<AddBlockModalProps> = ({
@@ -132,6 +134,7 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
   const [errors, setErrors] = useState<{ title?: string; endTime?: string }>({})
   const [savedTasks, setSavedTasks] = useState<SavedTask[]>([])
   const [userCats, setUserCats] = useState<UserCategory[]>([])
+  const [exams, setExams] = useState<ExamSubject[]>([])
   const [optionsOpen, setOptionsOpen] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
 
@@ -144,6 +147,7 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
         setSavedTasks([])
       }
       setUserCats(loadUserCategories())
+      setExams(loadExams())
     }
   }, [isOpen])
 
@@ -167,6 +171,7 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
         mealName: editBlock.mealName ?? '',
         color: editBlock.color ?? '',
         saveAsTemplate: false,
+        examSubjectId: editBlock.examSubjectId,
       })
     } else {
       const start = initialTime ?? '09:00'
@@ -258,6 +263,7 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
       color: form.color || undefined,
       status: editBlock?.status ?? 'upcoming',
       isExcused: editBlock?.isExcused ?? false,
+      examSubjectId: form.category === 'study' ? form.examSubjectId : undefined,
     })
     onClose()
   }
@@ -440,7 +446,22 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
             </div>
 
 
-            {/* Priority */}
+            {/* Description */}
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest block mb-1.5">
+                Description
+              </label>
+              <textarea
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="e.g. Chapter 3 and 4, pages 80–120"
+                rows={2}
+                className="w-full border border-gray-200 dark:border-[#48484A] rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-gray-50 bg-white dark:bg-[#1C1C1E] resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400 dark:placeholder-gray-500"
+              />
+            </div>
+
+            {/* Priority — hidden for study (coming soon) */}
+            {form.category !== 'study' && (
             <div>
               <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">
                 Priority
@@ -476,6 +497,35 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
                 })}
               </div>
             </div>
+            )}
+
+            {/* Exam subject picker — study blocks only */}
+            {form.category === 'study' && exams.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">
+                  Subject
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {exams.map((exam) => {
+                    const active = form.examSubjectId === exam.id
+                    return (
+                      <button
+                        key={exam.id}
+                        onClick={() => setForm((f) => ({ ...f, examSubjectId: active ? undefined : exam.id }))}
+                        className={[
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all',
+                          active ? 'text-white' : 'border-gray-200 dark:border-[#48484A] text-gray-600 dark:text-gray-300',
+                        ].join(' ')}
+                        style={active ? { backgroundColor: exam.color, borderColor: exam.color } : {}}
+                      >
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: active ? '#ffffff99' : exam.color }} />
+                        {exam.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Meal details */}
             {form.category === 'meal' && (
@@ -518,18 +568,6 @@ export const AddBlockModal: React.FC<AddBlockModalProps> = ({
                       onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
                       placeholder="e.g. Room 204, Library..."
                       className="w-full border border-gray-200 dark:border-[#48484A] rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-gray-50 bg-white dark:bg-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    />
-                  </div>
-
-                  {/* Notes */}
-                  <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 block">Notes</label>
-                    <textarea
-                      value={form.notes}
-                      onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                      placeholder="Add any notes..."
-                      rows={2}
-                      className="w-full border border-gray-200 dark:border-[#48484A] rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-gray-50 bg-white dark:bg-[#1C1C1E] resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                   </div>
 

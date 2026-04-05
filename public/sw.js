@@ -1,4 +1,4 @@
-const CACHE = 'daycal-v1'
+const CACHE = 'daycal-v2'
 const SHELL = ['/', '/login', '/onboarding']
 
 self.addEventListener('install', e => {

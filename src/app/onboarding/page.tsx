@@ -167,7 +167,7 @@ const DEFAULT_ENABLED: EnabledGoals = {
 export default function OnboardingPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { saveGoals } = useCloudSync(user?.uid)
+  const { saveGoals, saveProfile } = useCloudSync(user?.uid)
   const [step, setStep] = useState(1)
   const [goals, setGoals] = useState<OnboardingGoals>({
     studyHoursPerWeek: 20,
@@ -190,6 +190,7 @@ export default function OnboardingPage() {
     localStorage.setItem('daycal_onboarded', 'true')
     localStorage.setItem('daycal_goals', JSON.stringify(goals))
     saveGoals(goals)
+    saveProfile({ onboarded: true })
 
     if (goals.templateChoice) {
       const template = TEMPLATES.find((t) => t.id === goals.templateChoice)

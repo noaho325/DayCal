@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ToastProvider } from '@/components/shared/Toast'
+import { UpdateBanner } from '@/components/shared/UpdateBanner'
 
 const inter = Inter({
   variable: '--font-inter',
@@ -46,6 +47,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-[#FAFAFA] dark:bg-[#0F0F10] text-[#1A1A1A] dark:text-gray-50">
+        <UpdateBanner />
         {children}
         <ToastProvider />
       </body>

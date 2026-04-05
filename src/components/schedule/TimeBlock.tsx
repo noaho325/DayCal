@@ -23,6 +23,7 @@ import type { TimeBlock as TimeBlockType } from '@/types'
 import { PRIORITY_META, getCategoryMeta, loadUserCategories } from '@/utils/constants'
 import { PIXELS_PER_MINUTE, TIMELINE_START_HOUR, TIMELINE_END_HOUR } from '@/utils/constants'
 import { formatTime, formatDuration, timeToMinutes, minutesToTime } from '@/utils/formatters'
+import { loadExams } from './ExamPlanner'
 
 const ICON_MAP: Record<string, React.ElementType> = {
   GraduationCap,
@@ -60,6 +61,11 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
   const meta = getCategoryMeta(block.category, customCats)
   const Icon = meta.iconName ? (ICON_MAP[meta.iconName] ?? null) : null
 
+  // Exam subject lookup for study blocks
+  const examSubject = block.category === 'study' && block.examSubjectId
+    ? loadExams().find(e => e.id === block.examSubjectId) ?? null
+    : null
+
   const duration = timeToMinutes(block.endTime) - timeToMinutes(block.startTime)
   const isCompact = duration < 45
   const isFinished =
@@ -81,12 +87,14 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
       ? '#9CA3AF'
       : block.status === 'in-progress'
       ? '#3B82F6'
+      : examSubject
+      ? examSubject.color
       : priorityColor
 
-  const catColor = meta.color
+  const catColor = examSubject ? examSubject.color : meta.color
   const bgColor = block.status === 'skipped'
     ? 'rgba(239,68,68,0.12)'
-    : catColor + '55'
+    : catColor + '33'
 
   const blockStyle: React.CSSProperties = {
     ...style,
@@ -179,6 +187,69 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
     window.addEventListener('mouseup', handleMouseUp)
   }, [block.id, block.startTime, block.endTime, onMove])
 
+  // ── Resize logic (drag bottom edge) ─────────────────────────────────────────
+  const resizeState = useRef<{ startY: number; origEndMins: number; origStartMins: number } | null>(null)
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!onMove || !blockRef.current) return
+
+    const origStartMins = timeToMinutes(block.startTime)
+    const origEndMins = timeToMinutes(block.endTime)
+    resizeState.current = { startY: e.clientY, origEndMins, origStartMins }
+
+    const el = blockRef.current
+    el.style.zIndex = '40'
+
+    const label = document.createElement('div')
+    label.id = 'resize-time-label'
+    label.style.cssText = `
+      position: absolute; right: 8px; bottom: 20px;
+      background: rgba(0,0,0,0.72); color: #fff;
+      font-size: 11px; font-weight: 600; border-radius: 6px;
+      padding: 2px 6px; pointer-events: none; z-index: 50;
+    `
+    label.textContent = formatTime(block.endTime)
+    el.appendChild(label)
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!resizeState.current || !blockRef.current) return
+      const deltaY = ev.clientY - resizeState.current.startY
+      const deltaMinutes = Math.round((deltaY / PIXELS_PER_MINUTE) / 5) * 5
+      const newEndMins = Math.max(
+        resizeState.current.origStartMins + 15,
+        Math.min(TIMELINE_END_HOUR * 60, resizeState.current.origEndMins + deltaMinutes)
+      )
+      const newHeight = (newEndMins - resizeState.current.origStartMins) * PIXELS_PER_MINUTE
+      blockRef.current.style.height = `${Math.max(40, newHeight)}px`
+      const lbl = document.getElementById('resize-time-label')
+      if (lbl) lbl.textContent = formatTime(minutesToTime(newEndMins))
+    }
+
+    const handleMouseUp = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+      if (!resizeState.current) return
+      const deltaY = ev.clientY - resizeState.current.startY
+      const deltaMinutes = Math.round((deltaY / PIXELS_PER_MINUTE) / 5) * 5
+      const newEndMins = Math.max(
+        resizeState.current.origStartMins + 15,
+        Math.min(TIMELINE_END_HOUR * 60, resizeState.current.origEndMins + deltaMinutes)
+      )
+      if (blockRef.current) {
+        blockRef.current.style.height = ''
+        blockRef.current.style.zIndex = ''
+      }
+      document.getElementById('resize-time-label')?.remove()
+      resizeState.current = null
+      onMove(block.id, block.startTime, minutesToTime(newEndMins))
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [block.id, block.startTime, block.endTime, onMove])
+
   return (
     <>
       {/* Compact block — never changes height */}
@@ -203,14 +274,25 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
           </div>
         )}
 
+        {/* Resize handle */}
+        {onMove && (
+          <div
+            className="absolute bottom-0 left-2 right-2 h-3 flex items-end justify-center pb-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-ns-resize z-20"
+            onMouseDown={handleResizeMouseDown}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-8 h-1 rounded-full bg-current opacity-30" style={{ color: catColor }} />
+          </div>
+        )}
+
         <div className="w-full text-left px-3 py-2 flex items-start gap-2">
           {/* Category icon */}
           <div
             className="rounded-lg p-1.5 shrink-0 mt-0.5"
-            style={{ backgroundColor: meta.bgColor }}
+            style={{ backgroundColor: examSubject ? examSubject.color + '25' : meta.bgColor }}
           >
             {Icon ? (
-              <Icon size={14} style={{ color: meta.color }} />
+              <Icon size={14} style={{ color: examSubject ? examSubject.color : meta.color }} />
             ) : (
               <span className="text-sm leading-none">{meta.emoji}</span>
             )}
@@ -255,6 +337,15 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
               >
                 {block.mealName}
               </p>
+            )}
+
+            {examSubject && (
+              <span
+                className="inline-block text-[10px] font-semibold rounded-full px-2 py-0.5 mt-0.5"
+                style={{ backgroundColor: examSubject.color + '25', color: examSubject.color }}
+              >
+                {examSubject.name}
+              </span>
             )}
           </div>
         </div>
@@ -308,12 +399,14 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
             {/* Meta info */}
             <div className="px-5 pb-3 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className="inline-flex items-center text-[10px] font-semibold rounded-full px-2 py-0.5"
-                  style={{ color: PRIORITY_META[block.priority].color, backgroundColor: PRIORITY_META[block.priority].color + '18' }}
-                >
-                  {PRIORITY_META[block.priority].label}
-                </span>
+                {block.category !== 'study' && (
+                  <span
+                    className="inline-flex items-center text-[10px] font-semibold rounded-full px-2 py-0.5"
+                    style={{ color: PRIORITY_META[block.priority].color, backgroundColor: PRIORITY_META[block.priority].color + '18' }}
+                  >
+                    {PRIORITY_META[block.priority].label}
+                  </span>
+                )}
                 {block.status === 'in-progress' && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-100 rounded-full px-2 py-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
@@ -339,6 +432,14 @@ export const TimeBlock: React.FC<TimeBlockProps> = ({
               )}
               {block.category === 'meal' && block.mealName && (
                 <p className="text-sm font-medium" style={{ color: meta.color }}>{block.mealName}</p>
+              )}
+              {examSubject && (
+                <span
+                  className="inline-block text-xs font-semibold rounded-full px-3 py-1"
+                  style={{ backgroundColor: examSubject.color + '20', color: examSubject.color }}
+                >
+                  {examSubject.name}
+                </span>
               )}
               {block.category === 'meal' && !block.mealPhotoURL && (
                 <button

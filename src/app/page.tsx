@@ -44,6 +44,7 @@ import { useStreak } from '@/hooks/useStreak'
 import { useAuth } from '@/hooks/useAuth'
 import { useCloudSync } from '@/hooks/useCloudSync'
 import { Timeline } from '@/components/schedule/Timeline'
+import { ExamPlanner } from '@/components/schedule/ExamPlanner'
 import { RemindersPanel } from '@/components/reminders/RemindersPanel'
 import { GoalProgressPanel } from '@/components/goals/GoalProgressPanel'
 import { MorningBriefing } from '@/components/goals/MorningBriefing'
@@ -75,7 +76,7 @@ const PREF_ICON_MAP: Record<string, React.ElementType> = {
 }
 
 type ViewMode = 'day' | 'week' | 'month'
-type NavTab = 'today' | 'points' | 'meals' | 'social' | 'analytics' | 'lists' | 'preferences' | 'profile'
+type NavTab = 'today' | 'points' | 'meals' | 'exams' | 'social' | 'analytics' | 'lists' | 'preferences' | 'profile'
 
 function formatDisplayDate(dateStr: string): { weekday: string; date: string } {
   const d = parse(dateStr, 'yyyy-MM-dd', new Date())
@@ -104,11 +105,13 @@ function AppSidebar({
   activeTab,
   onNavigate,
   mealsEnabled,
+  examEnabled,
   mobile = false,
 }: {
   activeTab: NavTab
   onNavigate: (tab: NavTab) => void
   mealsEnabled: boolean
+  examEnabled: boolean
   mobile?: boolean
 }) {
   const sections = [
@@ -116,11 +119,12 @@ function AppSidebar({
       label: 'Views',
       items: [
         { id: 'today' as NavTab, icon: CalendarDays, label: 'Calendar' },
-        { id: 'points' as NavTab, icon: Star, label: 'Points' },
-        { id: 'analytics' as NavTab, icon: BarChart2, label: 'Analytics' },
+        // { id: 'points' as NavTab, icon: Star, label: 'Points' },
+        // { id: 'analytics' as NavTab, icon: BarChart2, label: 'Analytics' },
         { id: 'social' as NavTab, icon: Users, label: 'Social' },
         { id: 'lists' as NavTab, icon: ClipboardList, label: 'Lists' },
         ...(mealsEnabled ? [{ id: 'meals' as NavTab, icon: Utensils, label: 'Meals' }] : []),
+        ...(examEnabled ? [{ id: 'exams' as NavTab, icon: GraduationCap, label: 'Exams' }] : []),
       ],
     },
     {
@@ -185,7 +189,7 @@ function AppSidebar({
 export default function HomePage() {
   const router = useRouter()
   const { user, loading: authLoading, signOut } = useAuth()
-  const { saveStreak, saveWeeklyPoints } = useCloudSync(user?.uid)
+  const { saveStreak, saveWeeklyPoints, syncLoaded } = useCloudSync(user?.uid)
   const [currentDate, setCurrentDate] = useState(getTodayString)
   const [activeTab, setActiveTab] = useState<NavTab>('today')
   const prefCatRef = useRef<HTMLDivElement>(null)
@@ -208,14 +212,31 @@ export default function HomePage() {
     setDarkMode(document.documentElement.classList.contains('dark'))
     setHydration(parseInt(localStorage.getItem(`daycal_hydration_${new Date().toISOString().slice(0,10)}`) ?? '0', 10))
     const loggedIn = localStorage.getItem('daycal_logged_in') || user
-    const onboarded = localStorage.getItem('daycal_onboarded')
-    if (!loggedIn) {
-      router.replace('/login')
-    } else if (!onboarded) {
-      router.replace('/onboarding')
-    } else {
-      setMounted(true)
+    if (!loggedIn) { router.replace('/login'); return }
+
+    const checkAndRoute = async () => {
+      let onboarded = localStorage.getItem('daycal_onboarded')
+      // If not in localStorage, check Firestore (covers re-installs / new devices)
+      if (!onboarded && user) {
+        try {
+          const { doc, getDoc } = await import('firebase/firestore')
+          const { db: firestoreDb, isFirebaseConfigured: configured } = await import('@/lib/firebase')
+          if (configured && firestoreDb) {
+            const snap = await getDoc(doc(firestoreDb, 'users', user.uid, 'profile', 'data'))
+            if (snap.exists() && (snap.data().onboarded || snap.data().goals)) {
+              localStorage.setItem('daycal_onboarded', 'true')
+              onboarded = 'true'
+            }
+          }
+        } catch {}
+      }
+      if (!onboarded) {
+        router.replace('/onboarding')
+      } else {
+        setMounted(true)
+      }
     }
+    checkAndRoute()
   }, [router, user, authLoading])
 
   const toggleDarkMode = () => {
@@ -366,9 +387,11 @@ export default function HomePage() {
   }, [mounted])
 
   const [mealsEnabled, setMealsEnabled] = useState(false)
+  const [examEnabled, setExamEnabled] = useState(false)
   useEffect(() => {
     if (!mounted) return
     setMealsEnabled(localStorage.getItem('daycal_meals_enabled') === 'true')
+    setExamEnabled(localStorage.getItem('daycal_exam_enabled') === 'true')
   }, [mounted])
 
   useEffect(() => {
@@ -452,6 +475,7 @@ export default function HomePage() {
               activeTab={activeTab}
               onNavigate={(t) => { setActiveTab(t); setSidebarOpen(false) }}
               mealsEnabled={mealsEnabled}
+              examEnabled={examEnabled}
               mobile
             />
           </div>
@@ -465,6 +489,7 @@ export default function HomePage() {
           activeTab={activeTab}
           onNavigate={setActiveTab}
           mealsEnabled={mealsEnabled}
+          examEnabled={examEnabled}
         />
       </div>
 
@@ -705,6 +730,10 @@ export default function HomePage() {
             <PointsView weekProgress={weekProgress} streak={streak} />
           ) : activeTab === 'meals' ? (
             <MealsView onLogMeal={logMealToDate} />
+          ) : activeTab === 'exams' ? (
+            <div className="flex-1 overflow-y-auto py-4 space-y-3">
+              <ExamPlanner blocks={blocks} />
+            </div>
           ) : activeTab === 'social' ? (
             <SocialView
               userId={user?.uid}
@@ -721,7 +750,7 @@ export default function HomePage() {
           ) : activeTab === 'lists' ? (
             <ListsView />
           ) : activeTab === 'preferences' ? (
-            <PreferencesView catSectionRef={prefCatRef} mealsEnabled={mealsEnabled} onMealsToggle={(v) => { setMealsEnabled(v); localStorage.setItem('daycal_meals_enabled', String(v)) }} />
+            <PreferencesView catSectionRef={prefCatRef} mealsEnabled={mealsEnabled} onMealsToggle={(v) => { setMealsEnabled(v); localStorage.setItem('daycal_meals_enabled', String(v)) }} examEnabled={examEnabled} onExamToggle={(v) => { setExamEnabled(v); localStorage.setItem('daycal_exam_enabled', String(v)) }} />
           ) : (
             <ProfileView />
           )}
@@ -948,6 +977,9 @@ function WeekCalendarView({ currentDate, weekProgress, goals, streak, onSelectDa
           </div>
         )}
 
+        {/* Weekly notes */}
+        <WeekNotes weekStartStr={weekStartStr} />
+
         {/* Score legend */}
         <div className="flex items-center justify-center gap-5 pb-2">
           {[['#22C55E', 'Great'], ['#EAB308', 'OK'], ['#EF4444', 'Rough']].map(([color, label]) => (
@@ -958,6 +990,38 @@ function WeekCalendarView({ currentDate, weekProgress, goals, streak, onSelectDa
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+function WeekNotes({ weekStartStr }: { weekStartStr: string }) {
+  const storageKey = `daycal_week_notes_${weekStartStr}`
+  const [notes, setNotes] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem(storageKey) ?? ''
+  })
+
+  // Re-load when the week changes
+  useEffect(() => {
+    setNotes(localStorage.getItem(storageKey) ?? '')
+  }, [storageKey])
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value
+    setNotes(val)
+    localStorage.setItem(storageKey, val)
+  }
+
+  return (
+    <div className="bg-white dark:bg-[#1C1C1E] rounded-2xl border border-gray-100 dark:border-[#38383A] p-4">
+      <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3">Week Notes</p>
+      <textarea
+        value={notes}
+        onChange={handleChange}
+        placeholder="Notes, plans, bullet points… anything for this week"
+        rows={5}
+        className="w-full resize-none bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600 outline-none leading-relaxed"
+      />
     </div>
   )
 }
@@ -1476,17 +1540,17 @@ function CatEmojiPicker({ current, onChange }: { current: string | undefined; on
   )
 }
 
-function PreferencesView({ catSectionRef, mealsEnabled, onMealsToggle }: { catSectionRef: React.RefObject<HTMLDivElement | null>; mealsEnabled: boolean; onMealsToggle: (v: boolean) => void }) {
+function PreferencesView({ catSectionRef, mealsEnabled, onMealsToggle, examEnabled, onExamToggle }: { catSectionRef: React.RefObject<HTMLDivElement | null>; mealsEnabled: boolean; onMealsToggle: (v: boolean) => void; examEnabled: boolean; onExamToggle: (v: boolean) => void }) {
   const [subView, setSubView] = useState<'main' | 'create-schedule'>('main')
 
   if (subView === 'create-schedule') {
     return <ScheduleCreatorView onBack={() => setSubView('main')} onSaved={() => setSubView('main')} />
   }
 
-  return <PreferencesMainView catSectionRef={catSectionRef} onCreateSchedule={() => setSubView('create-schedule')} mealsEnabled={mealsEnabled} onMealsToggle={onMealsToggle} />
+  return <PreferencesMainView catSectionRef={catSectionRef} onCreateSchedule={() => setSubView('create-schedule')} mealsEnabled={mealsEnabled} onMealsToggle={onMealsToggle} examEnabled={examEnabled} onExamToggle={onExamToggle} />
 }
 
-function PreferencesMainView({ catSectionRef, onCreateSchedule, mealsEnabled, onMealsToggle }: { catSectionRef: React.RefObject<HTMLDivElement | null>; onCreateSchedule: () => void; mealsEnabled: boolean; onMealsToggle: (v: boolean) => void }) {
+function PreferencesMainView({ catSectionRef, onCreateSchedule, mealsEnabled, onMealsToggle, examEnabled, onExamToggle }: { catSectionRef: React.RefObject<HTMLDivElement | null>; onCreateSchedule: () => void; mealsEnabled: boolean; onMealsToggle: (v: boolean) => void; examEnabled: boolean; onExamToggle: (v: boolean) => void }) {
   const [scheduleTemplates, setScheduleTemplates] = useState<ScheduleTemplate[]>(() => loadScheduleTemplates())
 
   const deleteTemplate = (id: string) => {
@@ -1644,7 +1708,7 @@ function PreferencesMainView({ catSectionRef, onCreateSchedule, mealsEnabled, on
         <h2 className="text-lg font-bold text-gray-900 dark:text-gray-50">Features</h2>
         <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">Turn features on or off</p>
       </div>
-      <div className="bg-white dark:bg-[#1C1C1E] rounded-xl border border-gray-100 dark:border-[#38383A] overflow-hidden">
+      <div className="bg-white dark:bg-[#1C1C1E] rounded-xl border border-gray-100 dark:border-[#38383A] overflow-hidden divide-y divide-gray-100 dark:divide-[#38383A]">
         <div className="flex items-center justify-between px-4 py-3.5" style={{ borderLeft: `4px solid ${mealsEnabled ? getCategoryMeta('meal').color : '#E5E7EB'}` }}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getCategoryMeta('meal').bgColor }}>
@@ -1659,6 +1723,18 @@ function PreferencesMainView({ catSectionRef, onCreateSchedule, mealsEnabled, on
             </div>
           </div>
           <PrefToggle enabled={mealsEnabled} onChange={onMealsToggle} />
+        </div>
+        <div className="flex items-center justify-between px-4 py-3.5" style={{ borderLeft: `4px solid ${examEnabled ? '#8B5CF6' : '#E5E7EB'}` }}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: examEnabled ? '#F3EFFE' : '#F3F4F6' }}>
+              <GraduationCap size={16} style={{ color: examEnabled ? '#8B5CF6' : '#9CA3AF' }} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">Exam Planner</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Track subjects, dates & study hours</p>
+            </div>
+          </div>
+          <PrefToggle enabled={examEnabled} onChange={onExamToggle} />
         </div>
       </div>
 

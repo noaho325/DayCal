@@ -27,6 +27,14 @@ export interface TimeBlock {
   color?: string
   notes?: string
   location?: string
+  examSubjectId?: string
+}
+
+export interface ExamSubject {
+  id: string
+  name: string
+  examDate: string  // YYYY-MM-DD
+  color: string
 }
 
 export interface DaySchedule {

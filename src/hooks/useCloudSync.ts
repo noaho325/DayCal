@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { isFirebaseConfigured, db } from '@/lib/firebase'
 import type { OnboardingGoals } from '@/types'
 import type { StreakData } from './useStreak'
@@ -12,6 +12,7 @@ interface UserProfile {
   photoURL?: string
   privacy?: Record<string, boolean>
   weeklyPoints?: number
+  onboarded?: boolean
 }
 
 /**
@@ -20,48 +21,58 @@ interface UserProfile {
  * Provides save functions that write to both.
  */
 export function useCloudSync(userId: string | undefined) {
+  const [syncLoaded, setSyncLoaded] = useState(!userId) // true immediately if no user
+
   // On mount: pull data from Firestore into localStorage
   useEffect(() => {
-    if (!isFirebaseConfigured || !db || !userId) return
+    if (!userId) { setSyncLoaded(true); return }
+    if (!isFirebaseConfigured || !db) { setSyncLoaded(true); return }
 
     const sync = async () => {
       try {
         const { doc, getDoc } = await import('firebase/firestore')
         const ref = doc(db!, 'users', userId, 'profile', 'data')
         const snap = await getDoc(ref)
-        if (!snap.exists()) return
 
-        const data = snap.data()
+        if (snap.exists()) {
+          const data = snap.data()
 
-        if (data.goals) {
-          localStorage.setItem('daycal_goals', JSON.stringify(data.goals))
-        }
-        if (data.streak) {
-          localStorage.setItem('daycal_streak', JSON.stringify(data.streak))
-        }
-        if (data.displayName !== undefined) {
-          localStorage.setItem('daycal_profile_name', data.displayName)
-        }
-        if (data.username !== undefined) {
-          localStorage.setItem('daycal_profile_username', data.username)
-        }
-        if (data.bio !== undefined) {
-          localStorage.setItem('daycal_profile_bio', data.bio)
-        }
-        if (data.photoURL !== undefined) {
-          localStorage.setItem('daycal_profile_photo', data.photoURL)
-        }
-        if (data.privacy) {
-          localStorage.setItem('daycal_privacy', JSON.stringify(data.privacy))
-        }
-        if (data.userCats) {
-          localStorage.setItem('daycal_user_cats', JSON.stringify(data.userCats))
-        }
-        if (data.catOverrides) {
-          localStorage.setItem('daycal_cat_overrides', JSON.stringify(data.catOverrides))
+          if (data.goals) {
+            localStorage.setItem('daycal_goals', JSON.stringify(data.goals))
+          }
+          if (data.streak) {
+            localStorage.setItem('daycal_streak', JSON.stringify(data.streak))
+          }
+          if (data.displayName !== undefined) {
+            localStorage.setItem('daycal_profile_name', data.displayName)
+          }
+          if (data.username !== undefined) {
+            localStorage.setItem('daycal_profile_username', data.username)
+          }
+          if (data.bio !== undefined) {
+            localStorage.setItem('daycal_profile_bio', data.bio)
+          }
+          if (data.photoURL !== undefined) {
+            localStorage.setItem('daycal_profile_photo', data.photoURL)
+          }
+          if (data.privacy) {
+            localStorage.setItem('daycal_privacy', JSON.stringify(data.privacy))
+          }
+          if (data.userCats) {
+            localStorage.setItem('daycal_user_cats', JSON.stringify(data.userCats))
+          }
+          if (data.catOverrides) {
+            localStorage.setItem('daycal_cat_overrides', JSON.stringify(data.catOverrides))
+          }
+          // If they have a profile in Firestore they have already onboarded
+          if (data.onboarded || data.goals) {
+            localStorage.setItem('daycal_onboarded', 'true')
+          }
         }
       } catch (err) {
         console.warn('Cloud sync load failed', err)
+      } finally {
+        setSyncLoaded(true)
       }
     }
 
@@ -113,5 +124,5 @@ export function useCloudSync(userId: string | undefined) {
     } catch {}
   }, [userId])
 
-  return { saveGoals, saveStreak, saveProfile, saveWeeklyPoints }
+  return { saveGoals, saveStreak, saveProfile, saveWeeklyPoints, syncLoaded }
 }
